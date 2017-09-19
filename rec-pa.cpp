@@ -21,6 +21,9 @@
 #include <config.h>
 #endif
 
+#include <iostream>
+#include <iomanip>
+
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -36,28 +39,72 @@
 #include "kfr/include/kfr/dsp.hpp"
 #include "kfr/include/kfr/io.hpp"
 
-#define BUFSIZE 1024
+#define BUFSIZE 2048
+#define FFTSIZE 256
+//#define NB_DISPLAYED_BINS FFTSIZE/2 // subset of the DFT bins to display
+#define NB_DISPLAYED_BINS 32 // subset of the DFT bins to display
+
+//.rate = 44100, // 8000, 22050, 11025...
+#define SAMPLERATE 44100
 
 using namespace kfr;
+using namespace std;
 
+
+int prep(float val) {
+
+
+    return (int) max(0,((val + 50) / 100 * 80));
+
+}
+void plothist(univector<float, FFTSIZE> data) {
+
+    unsigned int hz_inc = SAMPLERATE / FFTSIZE;
+
+    //size_t NBLINES = 32;
+    //size_t SAMPLES_PER_LINE = FFTSIZE/NBLINES;
+
+    cout << "\x1b[32A\x1b[0J"; // up 10 lines, clear screen to bottom
+
+    // The first coefficient in your array is the 0 frequency coefficient. That is basically the average power level for all frequencies. We skip it.
+    // Then, we can only measure frequencies up to half the sample points. 
+    unsigned int hz = 0;
+    for (size_t i = 1; i < NB_DISPLAYED_BINS; i++) {
+        //float avg = mean(data.slice(i * SAMPLES_PER_LINE, (i+1) * SAMPLES_PER_LINE - 1));
+        cout << setfill(' ') << setw(5) << hz << " - ";
+        hz += hz_inc;
+        cout << setfill(' ') << setw(5) << hz << " Hz ";
+        for (size_t j = 0; j < prep(data[i]); j++) {
+            cout << "=";
+        }
+        cout << endl;
+
+    }
+}
 
 void fft(const univector<complex<float>, BUFSIZE> samples) {
 
-    univector<complex<float>, BUFSIZE> freq = scalar(qnan);
 
-    dft_plan<float> dft(BUFSIZE);                      // initialize plan
+    // should we apply a window?
+    //auto windowed_samples = window_hann(samples.size());
+
+    univector<complex<float>, FFTSIZE> freq = scalar(qnan);
+
+    dft_plan<float> dft(FFTSIZE);                      // initialize plan
     univector<u8> temp(dft.temp_size);       // allocate work buffer
     dft.execute(freq, samples, temp);        // do the actual transform
-    univector<float, BUFSIZE> dB = amp_to_dB(cabs(freq));
+    freq = freq / FFTSIZE;
+    univector<float, FFTSIZE> dB = amp_to_dB(cabs(freq));
 
 
-    println("max  = ", maxof(dB));
-    println("min  = ", minof(dB));
-    println("mean = ", mean(dB));
-    println("rms  = ", rms(dB));
+//    println("max  = ", maxof(dB));
+//    println("min  = ", minof(dB));
+//    println("mean = ", mean(dB));
+//    println("rms  = ", rms(dB));
+//
+    //println(dB);
 
-    println(dB);
-
+    plothist(dB);
 }
 
 /* A simple routine calling UNIX write() in a loop */
@@ -86,7 +133,7 @@ int main(int argc, char*argv[]) {
     static const pa_sample_spec ss = {
         //.format = PA_SAMPLE_S16LE, // see https://freedesktop.org/software/pulseaudio/doxygen/sample_8h.html#a3c622fc51f4fc6ebfdcc7b454ac9c05f
         .format = PA_SAMPLE_FLOAT32LE, // see https://freedesktop.org/software/pulseaudio/doxygen/sample_8h.html#a3c622fc51f4fc6ebfdcc7b454ac9c05f
-        .rate = 44100, // 8000, 22050, 11025...
+        .rate = SAMPLERATE,
         .channels = 1
     };
     pa_simple *s = NULL;
