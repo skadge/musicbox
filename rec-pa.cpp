@@ -39,24 +39,38 @@
 #include "kfr/include/kfr/dsp.hpp"
 #include "kfr/include/kfr/io.hpp"
 
-#define BUFSIZE 2048
-#define FFTSIZE 256
-//#define NB_DISPLAYED_BINS FFTSIZE/2 // subset of the DFT bins to display
-#define NB_DISPLAYED_BINS 32 // subset of the DFT bins to display
+#define BUFSIZE 1024
+#define FFTSIZE 64
+#define NB_BINS FFTSIZE/2 // subset of the DFT bins to display/analyse -- must be at most FFTSIZE/2
+//#define NB_BINS 32 // subset of the DFT bins to display/analyse
 
 //.rate = 44100, // 8000, 22050, 11025...
-#define SAMPLERATE 44100
+//#define SAMPLERATE 44100
+#define SAMPLERATE 11025
+
+#define CALIBRATION_STEPS 10
+
+#define DISPLAY_WIDTH 80
 
 using namespace kfr;
 using namespace std;
 
+unsigned int nb_calibration_steps = 0;
+float Amin, Amax;
 
-int prep(float val) {
+float prep(float val) {
 
+    if (nb_calibration_steps < CALIBRATION_STEPS) {
+        if (val < Amin) Amin = val;
+        if (val > Amax) Amax = val;
+        nb_calibration_steps++;
+        return 0;
+    }
 
-    return (int) max(0,((val + 50) / 100 * 80));
+    return max(0, (val - Amin) / ( Amax - Amin));
 
 }
+
 void plothist(univector<float, FFTSIZE> data) {
 
     unsigned int hz_inc = SAMPLERATE / FFTSIZE;
@@ -64,22 +78,33 @@ void plothist(univector<float, FFTSIZE> data) {
     //size_t NBLINES = 32;
     //size_t SAMPLES_PER_LINE = FFTSIZE/NBLINES;
 
-    cout << "\x1b[32A\x1b[0J"; // up 10 lines, clear screen to bottom
+    cout << "\x1b[" << NB_BINS + 2 << "A\x1b[0J"; // up 10 lines, clear screen to bottom
 
+    cout << "                 0                  25                  50                  75                 100" << endl;
+    cout << "                 |-------------------|-------------------|-------------------|-------------------|" << endl;
     // The first coefficient in your array is the 0 frequency coefficient. That is basically the average power level for all frequencies. We skip it.
     // Then, we can only measure frequencies up to half the sample points. 
     unsigned int hz = 0;
-    for (size_t i = 1; i < NB_DISPLAYED_BINS; i++) {
+    for (size_t i = 1; i < NB_BINS; i++) {
         //float avg = mean(data.slice(i * SAMPLES_PER_LINE, (i+1) * SAMPLES_PER_LINE - 1));
         cout << setfill(' ') << setw(5) << hz << " - ";
         hz += hz_inc;
         cout << setfill(' ') << setw(5) << hz << " Hz ";
+        for (size_t j = 0; j < (int) (prep(data[i]) * DISPLAY_WIDTH); j++) {
+            cout << "=";
+        }
+        cout << endl;
+
+    }
+}
+
         for (size_t j = 0; j < prep(data[i]); j++) {
             cout << "=";
         }
         cout << endl;
 
     }
+
 }
 
 void fft(const univector<complex<float>, BUFSIZE> samples) {
